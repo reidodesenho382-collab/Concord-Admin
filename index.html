@@ -125,14 +125,14 @@ function start() {
   });
 }
 
-const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['admins', '🛡 Administradores']];
+const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['discover', '🧭 Descubra'], ['admins', '🛡 Administradores']];
 function render() {
   if (!me) return; const n = $('#nav'), c = $('#content'), open = Object.values(repData).filter(r => r.status !== 'resolved').length;
   if ($('#content').contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
   n.replaceChildren(el('b', null, '🛡 Concord Admin')); c.replaceChildren();
   TABS.forEach(([k, l]) => { const b = el('button', k === tab ? 'on' : '', l + (k === 'reports' && open ? ' (' + open + ')' : '')); b.onclick = () => { tab = k; render(); }; n.append(b); });
   const sp = el('div', 'sp'), out = el('button', null, '⏻ Sair (' + me.name + ')'); out.onclick = () => auth.signOut(); n.append(sp, out);
-  ({ reports: apReports, users: apUsers, log: apLog, news: apNews, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })[tab](c);
+  ({ reports: apReports, users: apUsers, log: apLog, news: apNews, discover: apDiscover, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })[tab](c);
 }
 const renderAP = render;
 
@@ -248,6 +248,39 @@ function adminCard() {
   load().catch(() => {}); return d;
 }
 
+const DCATS = ['Comunidade', 'Jogos', 'Música', 'Estudo', 'Tecnologia', 'Arte', 'Outros'];
+const srvId = v => { const m = String(v).match(/invite=([^&\s#]+)/); return (m ? m[1] : String(v)).trim(); };
+function apDiscover(c) {
+  c.append(el('h2', null, '🧭 Descubra'), el('small', null, 'Escolha os servidores que aparecem na aba Descubra do Concord. O nome e o ícone são sempre os atuais do servidor.'));
+  const f = el('div', 'card2'), id = el('input'), ds = el('textarea'), ct = el('select'), pn = el('label', 'row'), pc = el('input'), ok = el('button', 'btn', '🧭 Adicionar à aba Descubra'), pv = el('small');
+  id.placeholder = 'ID do servidor ou link de convite'; ds.placeholder = 'Descrição curta (aparece no cartão)'; ds.maxLength = 200; pc.type = 'checkbox'; pc.style.width = 'auto'; pn.append(pc, el('span', null, '⭐ Destacar (aparece primeiro)'));
+  DCATS.forEach(x => { const o = el('option', null, x); o.value = x; ct.append(o); });
+  id.onchange = async () => { const v = srvId(id.value); if (!v) return pv.textContent = ''; try { const s = (await db.ref('servers/' + v).get()).val(); pv.textContent = s ? '✅ ' + s.name : '❌ Servidor não encontrado.'; } catch (e) { pv.textContent = 'Erro: ' + e.message; } };
+  ok.onclick = async () => {
+    const v = srvId(id.value); if (!v) return toast('Informe o ID ou o link do servidor.'); if (!ds.value.trim()) return toast('Escreva uma descrição.');
+    try { const s = (await db.ref('servers/' + v).get()).val(); if (!s) return toast('Servidor não encontrado.');
+      await db.ref('discover/' + v).set({ desc: ds.value.trim().slice(0, 200), cat: ct.value, pin: pc.checked || null, ts: firebase.database.ServerValue.TIMESTAMP, by: me.uid, byName: me.name });
+      id.value = ds.value = pv.textContent = ''; pc.checked = false; toast('Adicionado à aba Descubra! 🧭'); }
+    catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: publique as regras do Firebase para o nó "discover".' : 'Erro: ' + e.message); }
+  };
+  f.append(el('h3', null, 'Adicionar servidor'), id, pv, ds, ct, pn, ok); c.append(f);
+  const list = el('div'); c.append(list);
+  const ref = db.ref('discover'), fn = async s => {
+    const e = Object.entries(s.val() || {}).sort((a, b) => (b[1].pin ? 1 : 0) - (a[1].pin ? 1 : 0) || (b[1].ts || 0) - (a[1].ts || 0));
+    const nm = await Promise.all(e.map(async ([sid]) => { try { return (await db.ref('servers/' + sid + '/name').get()).val(); } catch (x) { return null; } }));
+    list.replaceChildren(el('h3', null, 'Em destaque (' + e.length + ')')); if (!e.length) list.append(el('div', 'empty', 'Nenhum servidor na aba Descubra ainda.'));
+    e.forEach(([sid, d], i) => {
+      const k = el('div', 'card2'), t = el('textarea'), cs = el('select'), row = el('div', 'pact'), sv = el('button', 'btn ghost', '💾 Salvar'), st = el('button', 'btn ghost', d.pin ? '⭐ Tirar destaque' : '☆ Destacar'), rm = el('button', 'btn ghost', '🗑 Remover');
+      DCATS.forEach(x => { const o = el('option', null, x); o.value = x; cs.append(o); }); cs.value = d.cat || 'Outros'; t.value = d.desc || ''; t.maxLength = 200; t.style.minHeight = '60px';
+      k.append(el('b', null, (d.pin ? '⭐ ' : '') + (nm[i] || '(servidor apagado)')), el('small', null, 'ID: ' + sid + (d.byName ? ' · por ' + d.byName : '')), t, cs);
+      sv.onclick = () => db.ref('discover/' + sid).update({ desc: t.value.trim().slice(0, 200), cat: cs.value }).then(() => toast('Salvo!')).catch(x => toast('Erro: ' + x.message));
+      st.onclick = () => db.ref('discover/' + sid + '/pin').set(d.pin ? null : true);
+      rm.onclick = () => confirm('Remover da aba Descubra?') && db.ref('discover/' + sid).remove();
+      row.append(sv, st, rm); k.append(row); list.append(k);
+    });
+  };
+  ref.on('value', fn); const off = () => ref.off('value', fn); subs.push(off); const t0 = tab; const chk = setInterval(() => { if (tab !== t0 || !me) { off(); clearInterval(chk); } }, 1000);
+}
 function apNews(c) {
   c.append(el('h2', null, '📢 Novidades'), newsForm());
   const feed = el('div'); c.append(feed);
