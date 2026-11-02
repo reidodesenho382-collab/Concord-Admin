@@ -140,22 +140,16 @@ function render() {
   out.onclick = () => auth.signOut(); 
   n.append(sp, out);
 
-  // Executa a aba atual com proteção contra erros visível na tela
-  try {
-    const handlers = {
-      reports: apReports,
-      users: apUsers,
-      chat: apChat,
-      log: apLog,
-      news: apNews,
-      discover: apDiscover,
-      admins: c2 => { c2.append(el('h2', null, '🛡 Administradores')); adminCard(c2); }
-    };
-    if (handlers[tab]) handlers[tab](c);
-  } catch (err) {
-    console.p(err);
-    c.append(el('div', 'card2', '❌ Erro ao carregar esta aba: ' + err.message));
-  }
+  const handlers = {
+    reports: apReports,
+    users: apUsers,
+    chat: apChat,
+    log: apLog,
+    news: apNews,
+    discover: apDiscover,
+    admins: c2 => { c2.append(el('h2', null, '🛡 Administradores')); adminCard(c2); }
+  };
+  if (handlers[tab]) handlers[tab](c);
 }
 const renderAP = render;
 
