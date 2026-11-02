@@ -125,14 +125,14 @@ function start() {
   });
 }
 
-const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['discover', '🧭 Descubra'], ['admins', '🛡 Administradores']];
+const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['chat', '💬 Chat ADM'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['discover', '🧭 Descubra'], ['admins', '🛡 Administradores']];
 function render() {
   if (!me) return; const n = $('#nav'), c = $('#content'), open = Object.values(repData).filter(r => r.status !== 'resolved').length;
   if ($('#content').contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
   n.replaceChildren(el('b', null, '🛡 Concord Admin')); c.replaceChildren();
   TABS.forEach(([k, l]) => { const b = el('button', k === tab ? 'on' : '', l + (k === 'reports' && open ? ' (' + open + ')' : '')); b.onclick = () => { tab = k; render(); }; n.append(b); });
   const sp = el('div', 'sp'), out = el('button', null, '⏻ Sair (' + me.name + ')'); out.onclick = () => auth.signOut(); n.append(sp, out);
-  ({ reports: apReports, users: apUsers, log: apLog, news: apNews, discover: apDiscover, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })[tab](c);
+  ({ reports: apReports, users: apUsers, chat: apChat, log: apLog, news: apNews, discover: apDiscover, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })(c);
 }
 const renderAP = render;
 
@@ -174,6 +174,71 @@ function apUsers(c) {
   };
   b.onclick = go; i.onkeydown = e => { if (e.key === 'Enter') go(); };
 }
+
+/* ---------- chat exclusivo para administradores ---------- */
+function apChat(c) {
+  c.append(el('h2', null, '💬 Chat Exclusivo de ADMs'));
+  c.append(el('small', null, 'Converse em tempo real com os outros administradores do painel.'));
+  
+  const box = el('div', 'card2');
+  box.style.height = '400px';
+  box.style.overflowY = 'auto';
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+  box.style.gap = '8px';
+
+  const row = el('div', 'row');
+  const input = el('input');
+  input.placeholder = 'Digite sua mensagem...';
+  const sendBtn = el('button', 'btn', 'Enviar');
+  row.append(input, sendBtn);
+
+  c.append(box, row);
+
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      await db.ref('adminChat').push({
+        text,
+        uid: me.uid,
+        name: me.name,
+        ts: firebase.database.ServerValue.TIMESTAMP
+      });
+    } catch (e) {
+      toast('Erro ao enviar: ' + e.message);
+    }
+  };
+
+  sendBtn.onclick = send;
+  input.onkeydown = e => { if (e.key === 'Enter') send(); };
+
+  const chatRef = db.ref('adminChat').limitToLast(50);
+  const listener = s => {
+    box.replaceChildren();
+    const val = s.val() || {};
+    const msgs = Object.values(val);
+    if (!msgs.length) {
+      box.append(el('div', 'empty', 'Nenhuma mensagem ainda. Comece a conversar!'));
+      return;
+    }
+    msgs.forEach(m => {
+      const d = el('div', 'pbio');
+      d.style.margin = '0';
+      d.innerHTML = `<b>${m.name || 'Admin'}</b> <small style="float:right;">${m.ts ? fmtDate(m.ts) : ''}</small><br>${m.text}`;
+      box.append(d);
+    });
+    box.scrollTop = box.scrollHeight;
+  };
+
+  chatRef.on('value', listener);
+  const off = () => chatRef.off('value', listener);
+  subs.push(off);
+  const t0 = tab;
+  const chk = setInterval(() => { if (tab !== t0 || !me) { off(); clearInterval(chk); } }, 1000);
+}
+
 async function apLog(c) {
   c.append(el('h2', null, '📜 Histórico de sanções')); const box = el('div'); c.append(box);
   try {
@@ -210,8 +275,7 @@ async function applySanction(uid, name, action, dur, reason, reportId) {
   if (reportId) await db.ref('reports/' + reportId).update({ status: 'resolved', action, handledBy: me.uid, handledName: me.name, handledAt: ts });
 }
 
-
-/* ---------- novidades e administradores (movidos do site principal) ---------- */
+/* ---------- novidades e administradores ---------- */
 function photoData(f, maxW, cb) {
   if (!f || !f.type.startsWith('image/')) return toast('Escolha uma imagem.');
   const img = new Image(), url = URL.createObjectURL(f);
