@@ -93,7 +93,6 @@ function toast(t, label, fn) {
   document.body.append(d); setTimeout(() => d.remove(), label ? 30000 : 3500);
 }
 
-/* ---------- acesso: só quem está em admins/<uid> ---------- */
 let me = null, subs = [], repData = {}, tab = 'reports', showResolved = false;
 const errBox = m => $('#err').textContent = m;
 const msgErr = e => ({ 'auth/invalid-email': 'E-mail inválido.', 'auth/missing-password': 'Digite a senha.', 'auth/wrong-password': 'Senha incorreta.', 'auth/invalid-credential': 'E-mail ou senha incorretos.', 'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco.', 'auth/user-disabled': 'Esta conta foi desativada.', 'auth/network-request-failed': 'Sem conexão.', 'auth/unauthorized-domain': 'Adicione este domínio em Authentication > Configurações > Domínios autorizados.' }[e.code] || e.message);
@@ -116,7 +115,6 @@ function start() {
   errBox(''); $('#gate').hidden = true; $('#panel').hidden = false; let first = true;
   const on = (ref, fn) => { ref.on('value', fn); subs.push(() => ref.off('value', fn)); };
   on(db.ref('.info/serverTimeOffset'), s => { tOff = s.val() || 0; });
-  /* se deixar de ser admin enquanto usa o painel, bloqueia na hora */
   on(db.ref('admins/' + me.uid), s => { if (s.val() !== true) { lock('⛔ Seu acesso de administrador foi removido.'); auth.signOut(); } });
   on(db.ref('reports').limitToLast(100), s => {
     const prev = Object.keys(repData); repData = s.val() || {};
@@ -126,17 +124,41 @@ function start() {
 }
 
 const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['chat', '💬 Chat ADM'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['discover', '🧭 Descubra'], ['admins', '🛡 Administradores']];
+
 function render() {
-  if (!me) return; const n = $('#nav'), c = $('#content'), open = Object.values(repData).filter(r => r.status !== 'resolved').length;
-  if ($('#content').contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  if (!me) return; 
+  const n = $('#nav'), c = $('#content'), open = Object.values(repData).filter(r => r.status !== 'resolved').length;
   n.replaceChildren(el('b', null, '🛡 Concord Admin')); c.replaceChildren();
-  TABS.forEach(([k, l]) => { const b = el('button', k === tab ? 'on' : '', l + (k === 'reports' && open ? ' (' + open + ')' : '')); b.onclick = () => { tab = k; render(); }; n.append(b); });
-  const sp = el('div', 'sp'), out = el('button', null, '⏻ Sair (' + me.name + ')'); out.onclick = () => auth.signOut(); n.append(sp, out);
-  ({ reports: apReports, users: apUsers, chat: apChat, log: apLog, news: apNews, discover: apDiscover, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })(c);
+  
+  TABS.forEach(([k, l]) => { 
+    const b = el('button', k === tab ? 'on' : '', l + (k === 'reports' && open ? ' (' + open + ')' : '')); 
+    b.onclick = () => { tab = k; render(); }; 
+    n.append(b); 
+  });
+  
+  const sp = el('div', 'sp'), out = el('button', null, '⏻ Sair (' + me.name + ')'); 
+  out.onclick = () => auth.signOut(); 
+  n.append(sp, out);
+
+  // Executa a aba atual com proteção contra erros visível na tela
+  try {
+    const handlers = {
+      reports: apReports,
+      users: apUsers,
+      chat: apChat,
+      log: apLog,
+      news: apNews,
+      discover: apDiscover,
+      admins: c2 => { c2.append(el('h2', null, '🛡 Administradores')); adminCard(c2); }
+    };
+    if (handlers[tab]) handlers[tab](c);
+  } catch (err) {
+    console.p(err);
+    c.append(el('div', 'card2', '❌ Erro ao carregar esta aba: ' + err.message));
+  }
 }
 const renderAP = render;
 
-/* ---------- funções de moderação (movidas do site principal) ---------- */
 const ACTS = [['⚠️ Avisar', 'warn'], ['⏳ Limitar', 'limit'], ['⏸ Suspender', 'suspend'], ['🔨 Banir', 'ban']];
 function reportCard(id, r, actionable) {
   const d = el('div', 'card2'); d.append(el('b', null, '🚩 ' + r.reason + ' · ' + (r.ts ? fmtDate(r.ts) : '')), el('small', null, 'Denunciado: ' + r.targetName + ' (' + r.target + ') · Por: ' + r.byName));
@@ -148,6 +170,7 @@ function reportCard(id, r, actionable) {
   } else d.append(el('small', null, '✔ Resolvida por ' + (r.handledName || '?') + ': ' + (r.action || '')));
   return d;
 }
+
 function apReports(c) {
   c.append(el('h2', null, '🚩 Denúncias'));
   const all = Object.entries(repData).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0)), op = all.filter(([, r]) => r.status !== 'resolved'), done = all.filter(([, r]) => r.status === 'resolved').slice(0, 15);
@@ -156,26 +179,39 @@ function apReports(c) {
   const t = el('button', 'btn ghost', (showResolved ? 'Ocultar' : 'Mostrar') + ' resolvidas (' + done.length + ')'); t.onclick = () => { showResolved = !showResolved; renderAP(); }; c.append(t);
   if (showResolved) done.forEach(([id, r]) => c.append(reportCard(id, r, false)));
 }
+
 function apUsers(c) {
   c.append(el('h2', null, '👤 Usuários'));
-  const f = el('div', 'card2'), i = el('input'), b = el('button', 'btn', 'Buscar'), res = el('div'); i.placeholder = 'Nome de usuário ou ID'; f.append(el('small', null, 'Busque pelo nome exato ou cole o ID da conta.'), i, b); c.append(f, res);
+  const f = el('div', 'card2'), i = el('input'), b = el('button', 'btn', 'Buscar'), res = el('div'); 
+  i.placeholder = 'Nome de usuário ou ID'; 
+  f.append(el('small', null, 'Busque pelo nome exato ou cole o ID da conta.'), i, b); 
+  c.append(f, res);
+
   const go = async () => {
-    const v = i.value.trim(); if (!v) return; res.replaceChildren(el('small', null, 'Buscando…')); let id = null, u = null;
+    const v = i.value.trim(); if (!v) return; 
+    res.replaceChildren(el('small', null, 'Buscando…')); 
+    let id = null, u = null;
     try {
       const q = await db.ref('users').orderByChild('lname').equalTo(v.toLowerCase()).limitToFirst(1).get();
-      if (q.exists()) { id = Object.keys(q.val())[0]; u = q.val()[id]; } else { const x = (await db.ref('users/' + v).get()).val(); if (x) { id = v; u = x; } }
+      if (q.exists()) { 
+        id = Object.keys(q.val())[0]; 
+        u = q.val()[id]; 
+      } else { 
+        const x = (await db.ref('users/' + v).get()).val(); 
+        if (x) { id = v; u = x; } 
+      }
       if (!id) return res.replaceChildren(el('small', null, 'Usuário não encontrado.'));
       const a = (await db.ref('accounts/' + id).get()).val() || {}, d = el('div', 'card2'), st = [], wc = Object.keys((await db.ref('warns/' + id).get()).val() || {}).length;
       if (a.banned) st.push('🔨 banida'); if ((a.until || 0) > nowS()) st.push('⏸ suspensa até ' + fmtDate(a.until)); if ((a.limitUntil || 0) > nowS()) st.push('⏳ limitada até ' + fmtDate(a.limitUntil));
-      d.append(el('b', null, u.name), el('small', null, 'ID: ' + id), el('small', null, 'Situação: ' + (st.join(' · ') || '✅ normal') + (a.reason ? ' · motivo: ' + a.reason : '')), el('small', null, 'Avisos recebidos: ' + wc));
-      const row = el('div', 'pact'); [...ACTS, ['✅ Remover sanções', 'clear']].forEach(([l, ac]) => { const bt = el('button', 'btn ghost', l); bt.onclick = () => openMod(id, u.name, null, ac); row.append(bt); });
+      d.append(el('b', null, u.name || 'Sem nome'), el('small', null, 'ID: ' + id), el('small', null, 'Situação: ' + (st.join(' · ') || '✅ normal') + (a.reason ? ' · motivo: ' + a.reason : '')), el('small', null, 'Avisos recebidos: ' + wc));
+      const row = el('div', 'pact'); [...ACTS, ['✅ Remover sanções', 'clear']].forEach(([l, ac]) => { const bt = el('button', 'btn ghost', l); bt.onclick = () => openMod(id, u.name || 'Usuário', null, ac); row.append(bt); });
       d.append(row); res.replaceChildren(d);
-    } catch (e) { res.replaceChildren(el('small', null, 'Erro: ' + e.message)); }
+    } catch (e) { res.replaceChildren(el('small', null, 'Erro na busca: ' + e.message)); }
   };
-  b.onclick = go; i.onkeydown = e => { if (e.key === 'Enter') go(); };
+  b.onclick = go; 
+  i.onkeydown = e => { if (e.key === 'Enter') go(); };
 }
 
-/* ---------- chat exclusivo para administradores ---------- */
 function apChat(c) {
   c.append(el('h2', null, '💬 Chat Exclusivo de ADMs'));
   c.append(el('small', null, 'Converse em tempo real com os outros administradores do painel.'));
@@ -247,6 +283,7 @@ async function apLog(c) {
     l.forEach(x => { const d = el('div', 'card2'), dur = (DURS.find(y => y[1] === x.dur) || [])[0]; d.append(el('b', null, ({ warn: '⚠️ Aviso', limit: '⏳ Limite', suspend: '⏸ Suspensão', ban: '🔨 Banimento', clear: '✅ Sanções removidas' })[x.action] + (dur ? ' (' + dur + ')' : '') + ' — ' + x.name), el('small', null, fmtDate(x.ts || 0) + ' · por ' + x.byName + (x.reason ? ' · ' + x.reason : ''))); box.append(d); });
   } catch (e) { box.append(el('small', null, 'Erro: ' + e.message)); }
 }
+
 function openMod(uid, name, reportId, action) {
   const d = $('#md'), body = $('#md-body'), ac = el('select'), du = el('select'), rs = el('textarea'), ok = el('button', 'btn', 'Aplicar'), cl = el('button', 'btn ghost', 'Cancelar'); body.replaceChildren();
   [['warn', '⚠️ Avisar'], ['limit', '⏳ Limitar temporariamente'], ['suspend', '⏸ Suspender temporariamente'], ['ban', '🔨 Banir permanentemente'], ['clear', '✅ Remover todas as sanções']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; ac.append(o); }); ac.value = action || 'warn';
@@ -257,11 +294,12 @@ function openMod(uid, name, reportId, action) {
     const a = ac.value; if (a !== 'clear' && !rs.value.trim()) return toast('Escreva o motivo.'); if (a === 'ban' && !confirm('Banir ' + name + ' permanentemente?')) return;
     ok.disabled = true;
     try { await applySanction(uid, name, a, +du.value, rs.value.trim(), reportId); d.close(); toast('Sanção aplicada.'); }
-    catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: publique as novas regras do Firebase (administradores não podem ser sancionados).' : 'Erro: ' + e.message); }
+    catch (e) { toast('Erro: ' + e.message); }
     ok.disabled = false;
   };
   cl.onclick = () => d.close(); d.showModal();
 }
+
 async function applySanction(uid, name, action, dur, reason, reportId) {
   if (uid === me.uid) throw new Error('Você não pode se sancionar.');
   if ((await db.ref('admins/' + uid).get()).val() === true) throw new Error('Administradores não podem ser sancionados.');
@@ -275,7 +313,6 @@ async function applySanction(uid, name, action, dur, reason, reportId) {
   if (reportId) await db.ref('reports/' + reportId).update({ status: 'resolved', action, handledBy: me.uid, handledName: me.name, handledAt: ts });
 }
 
-/* ---------- novidades e administradores ---------- */
 function photoData(f, maxW, cb) {
   if (!f || !f.type.startsWith('image/')) return toast('Escolha uma imagem.');
   const img = new Image(), url = URL.createObjectURL(f);
@@ -293,14 +330,15 @@ function newsForm() {
     if (!t.value.trim() || !x.value.trim()) return toast('Preencha o título e o texto.');
     const link = ur.value.trim(), post = { title: t.value.trim(), text: x.value.trim(), ts: firebase.database.ServerValue.TIMESTAMP, by: me.uid, byName: me.name };
     if (img || /^https?:\/\//.test(link)) post.img = img || link;
-    try { await db.ref('news').push(post); t.value = x.value = ur.value = ''; img = ''; fi.value = ''; toast('Novidade publicada! 🎉'); } catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: sua conta não é administradora.' : 'Erro: ' + e.message); }
+    try { await db.ref('news').push(post); t.value = x.value = ur.value = ''; img = ''; fi.value = ''; toast('Novidade publicada! 🎉'); } catch (e) { toast('Erro: ' + e.message); }
   };
   return d;
 }
-function adminCard() {
+
+function adminCard(c) {
   const d = el('div', 'card2'), inp = el('input'), add = el('button', 'btn ghost', 'Tornar administrador'), list = el('div');
   const kk = el('input'), kb = el('button', 'btn ghost', 'Salvar chave do Klipy para todos'); kk.placeholder = 'Chave do Klipy (GIFs para todos os usuários)'; kb.onclick = async () => { try { await db.ref('config/klipy').set(kk.value.trim() || null); toast('Chave do Klipy salva para todos!'); } catch (e) { toast('Erro: ' + e.message); } };
-  d.append(el('h3', null, '🛡 Administradores do Concord'), el('small', null, 'Cole o ID da pessoa (⚙ > Seu ID) para que ela também tenha acesso a este painel e possa publicar novidades.'), inp, add, list, el('h3', null, '🎞 GIFs (Klipy)'), el('small', null, 'Uma chave compartilhada faz o botão GIF funcionar para todo mundo. Crie em klipy.com/developers.'), kk, kb); inp.placeholder = 'ID do usuário';
+  d.append(el('h3', null, '🛡 Administradores do Concord'), el('small', null, 'Cole o ID da pessoa para que ela também tenha acesso a este painel.'), inp, add, list, el('h3', null, '🎞 GIFs (Klipy)'), el('small', null, 'Chave compartilhada para GIFs.'), kk, kb); inp.placeholder = 'ID do usuário';
   const load = async () => {
     const a = (await db.ref('admins').get()).val() || {}; list.replaceChildren();
     for (const id of Object.keys(a)) {
@@ -309,50 +347,52 @@ function adminCard() {
     }
   };
   add.onclick = async () => { const id = inp.value.trim(); if (!id) return; try { await db.ref('admins/' + id).set(true); inp.value = ''; toast('Administrador adicionado!'); load(); } catch (e) { toast('Erro: ' + e.message); } };
-  load().catch(() => {}); return d;
+  load().catch(() => {}); c.append(d);
 }
 
 const DCATS = ['Comunidade', 'Jogos', 'Música', 'Estudo', 'Tecnologia', 'Arte', 'Outros'];
 const srvId = v => { const m = String(v).match(/invite=([^&\s#]+)/); return (m ? m[1] : String(v)).trim(); };
+
 function apDiscover(c) {
-  c.append(el('h2', null, '🧭 Descubra'), el('small', null, 'Escolha os servidores que aparecem na aba Descubra do Concord. O nome e o ícone são sempre os atuais do servidor.'));
+  c.append(el('h2', null, '🧭 Descubra'), el('small', null, 'Escolha os servidores que aparecem na aba Descubra.'));
   const f = el('div', 'card2'), id = el('input'), ds = el('textarea'), ct = el('select'), pn = el('label', 'row'), pc = el('input'), ok = el('button', 'btn', '🧭 Adicionar à aba Descubra'), pv = el('small');
-  id.placeholder = 'ID do servidor ou link de convite'; ds.placeholder = 'Descrição curta (aparece no cartão)'; ds.maxLength = 200; pc.type = 'checkbox'; pc.style.width = 'auto'; pn.append(pc, el('span', null, '⭐ Destacar (aparece primeiro)'));
+  id.placeholder = 'ID do servidor ou link de convite'; ds.placeholder = 'Descrição curta'; ds.maxLength = 200; pc.type = 'checkbox'; pc.style.width = 'auto'; pn.append(pc, el('span', null, '⭐ Destacar'));
   DCATS.forEach(x => { const o = el('option', null, x); o.value = x; ct.append(o); });
   id.onchange = async () => { const v = srvId(id.value); if (!v) return pv.textContent = ''; try { const s = (await db.ref('servers/' + v).get()).val(); pv.textContent = s ? '✅ ' + s.name : '❌ Servidor não encontrado.'; } catch (e) { pv.textContent = 'Erro: ' + e.message; } };
   ok.onclick = async () => {
     const v = srvId(id.value); if (!v) return toast('Informe o ID ou o link do servidor.'); if (!ds.value.trim()) return toast('Escreva uma descrição.');
     try { const s = (await db.ref('servers/' + v).get()).val(); if (!s) return toast('Servidor não encontrado.');
       await db.ref('discover/' + v).set({ desc: ds.value.trim().slice(0, 200), cat: ct.value, pin: pc.checked || null, ts: firebase.database.ServerValue.TIMESTAMP, by: me.uid, byName: me.name });
-      id.value = ds.value = pv.textContent = ''; pc.checked = false; toast('Adicionado à aba Descubra! 🧭'); }
-    catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: publique as regras do Firebase para o nó "discover".' : 'Erro: ' + e.message); }
+      id.value = ds.value = pv.textContent = ''; pc.checked = false; toast('Adicionado com sucesso! 🧭'); }
+    catch (e) { toast('Erro: ' + e.message); }
   };
   f.append(el('h3', null, 'Adicionar servidor'), id, pv, ds, ct, pn, ok); c.append(f);
   const list = el('div'); c.append(list);
   const ref = db.ref('discover'), fn = async s => {
     const e = Object.entries(s.val() || {}).sort((a, b) => (b[1].pin ? 1 : 0) - (a[1].pin ? 1 : 0) || (b[1].ts || 0) - (a[1].ts || 0));
     const nm = await Promise.all(e.map(async ([sid]) => { try { return (await db.ref('servers/' + sid + '/name').get()).val(); } catch (x) { return null; } }));
-    list.replaceChildren(el('h3', null, 'Em destaque (' + e.length + ')')); if (!e.length) list.append(el('div', 'empty', 'Nenhum servidor na aba Descubra ainda.'));
+    list.replaceChildren(el('h3', null, 'Em destaque (' + e.length + ')')); if (!e.length) list.append(el('div', 'empty', 'Nenhum servidor ainda.'));
     e.forEach(([sid, d], i) => {
       const k = el('div', 'card2'), t = el('textarea'), cs = el('select'), row = el('div', 'pact'), sv = el('button', 'btn ghost', '💾 Salvar'), st = el('button', 'btn ghost', d.pin ? '⭐ Tirar destaque' : '☆ Destacar'), rm = el('button', 'btn ghost', '🗑 Remover');
       DCATS.forEach(x => { const o = el('option', null, x); o.value = x; cs.append(o); }); cs.value = d.cat || 'Outros'; t.value = d.desc || ''; t.maxLength = 200; t.style.minHeight = '60px';
-      k.append(el('b', null, (d.pin ? '⭐ ' : '') + (nm[i] || '(servidor apagado)')), el('small', null, 'ID: ' + sid + (d.byName ? ' · por ' + d.byName : '')), t, cs);
+      k.append(el('b', null, (d.pin ? '⭐ ' : '') + (nm[i] || '(servidor apagado)')), el('small', null, 'ID: ' + sid), t, cs);
       sv.onclick = () => db.ref('discover/' + sid).update({ desc: t.value.trim().slice(0, 200), cat: cs.value }).then(() => toast('Salvo!')).catch(x => toast('Erro: ' + x.message));
       st.onclick = () => db.ref('discover/' + sid + '/pin').set(d.pin ? null : true);
-      rm.onclick = () => confirm('Remover da aba Descubra?') && db.ref('discover/' + sid).remove();
+      rm.onclick = () => confirm('Remover?') && db.ref('discover/' + sid).remove();
       row.append(sv, st, rm); k.append(row); list.append(k);
     });
   };
   ref.on('value', fn); const off = () => ref.off('value', fn); subs.push(off); const t0 = tab; const chk = setInterval(() => { if (tab !== t0 || !me) { off(); clearInterval(chk); } }, 1000);
 }
+
 function apNews(c) {
   c.append(el('h2', null, '📢 Novidades'), newsForm());
   const feed = el('div'); c.append(feed);
   const ref = db.ref('news').limitToLast(20), fn = s => {
     feed.replaceChildren(); const all = Object.entries(s.val() || {}).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
-    if (!all.length) feed.append(el('div', 'empty', 'Nenhuma novidade publicada ainda.'));
+    if (!all.length) feed.append(el('div', 'empty', 'Nenhuma novidade ainda.'));
     all.forEach(([id, p]) => {
-      const d = el('div', 'card2 post'), x = el('button', 'btn ghost', '🗑 Apagar'); x.onclick = () => confirm('Apagar esta novidade?') && db.ref('news/' + id).remove();
+      const d = el('div', 'card2 post'), x = el('button', 'btn ghost', '🗑 Apagar'); x.onclick = () => confirm('Apagar?') && db.ref('news/' + id).remove();
       d.append(el('small', null, (p.ts ? fmtDate(p.ts) : '') + (p.byName ? ' · ' + p.byName : '')), el('h3', null, p.title || ''), el('div', 'pbio', p.text || ''));
       if (p.img) { const im = el('img'); im.src = p.img; im.alt = ''; d.append(im); }
       d.append(x); feed.append(d);
