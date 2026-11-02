@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Concord Admin</title>
+<style>
+:root{--rail:#0d1411;--side:#131b17;--main:#18221d;--hover:#1f2c26;--line:#24332b;--text:#e4efe8;--mute:#8fa59a;--green:#73cb27;--green-d:#5fb01c;--ink:#10250a;--red:#ed5565}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--main);color:var(--text);font-size:15px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.btn{background:var(--green);color:var(--ink);font-weight:600;padding:10px 16px;border-radius:6px}
+.btn:hover{background:var(--green-d)}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--hover)}
+.icon{background:transparent;color:var(--mute);font-size:20px;padding:2px 8px;border-radius:4px}
+input,select,textarea{background:var(--rail);border:1px solid var(--line);border-radius:6px;padding:10px 12px;width:100%}
+textarea{min-height:90px}
+input:focus{outline:2px solid var(--green);border-color:transparent}
+.empty{color:var(--mute);text-align:center;padding:40px 20px}
+.row{display:flex;gap:10px;align-items:center}
+.card2{background:var(--side);border:1px solid var(--line);border-radius:10px;padding:16px;margin:12px 0;display:grid;gap:10px}
+.pbio{background:var(--rail);border-radius:8px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}
+.pact{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+small{color:var(--mute)}
+.err{color:var(--red);min-height:18px;font-size:14px}
+.card{background:var(--side);border:1px solid var(--line);border-radius:12px;padding:32px;width:100%;max-width:400px;display:grid;gap:12px}
+.card h1{font-size:26px;text-align:center}.card p{color:var(--mute);text-align:center}
+#gate{min-height:100%;display:grid;place-items:center;padding:20px;background:radial-gradient(900px 500px at 50% -10%,#2c4a17,var(--rail))}
+#panel{display:grid;grid-template-columns:230px 1fr;height:100%}
+nav{background:var(--side);padding:24px 12px;display:flex;flex-direction:column;gap:4px;overflow:auto}
+nav b{padding:0 12px 14px;font-size:17px}
+nav button{text-align:left;padding:8px 12px;border-radius:6px;background:none;color:var(--mute)}
+nav button.on,nav button:hover{background:var(--hover);color:var(--text)}
+nav .sp{flex:1}
+#content{overflow-y:auto;padding:32px 40px;max-width:820px;width:100%}
+#content h2{margin-bottom:6px}
+dialog{margin:auto;background:var(--side);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:24px;width:min(420px,92vw)}
+dialog::backdrop{background:#000a}
+#md-body{display:grid;gap:10px}
+.post h3{font-size:17px}.post img{max-width:100%;border-radius:8px}
+.toast{position:fixed;right:16px;bottom:16px;background:var(--side);border:1px solid var(--green);border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:center;z-index:50}
+@media(max-width:700px){#panel{grid-template-columns:1fr;grid-template-rows:auto 1fr}nav{flex-direction:row;overflow-x:auto;padding:12px}nav b,nav .sp{display:none}#content{padding:16px}input,select,textarea{font-size:16px}}
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="card">
+    <h1>🛡 Concord Admin</h1>
+    <p>Acesso restrito a administradores.</p>
+    <input id="email" type="email" placeholder="E-mail" autocomplete="email">
+    <input id="pass" type="password" placeholder="Senha" autocomplete="current-password">
+    <div class="err" id="err"></div>
+    <button class="btn" id="login">Entrar</button>
+    <button class="btn ghost" id="google">Continuar com Google</button>
+  </div>
+</div>
+<div id="panel" hidden><nav id="nav"></nav><div id="content"></div></div>
+<dialog id="md"><div id="md-body"></div></dialog>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBJsPaZOArWDvpzEz5sPCxBaJe_Yf7eoTg",
+  authDomain: "concord-cdc9c.firebaseapp.com",
+  databaseURL: "https://concord-cdc9c-default-rtdb.firebaseio.com",
+  projectId: "concord-cdc9c",
+  storageBucket: "concord-cdc9c.firebasestorage.app",
+  messagingSenderId: "663376374883",
+  appId: "1:663376374883:web:7f55fe6f4bec11bea09c56",
+  measurementId: "G-VS3HXS02CT"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.database();
+
+const $ = s => document.querySelector(s);
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+const uc = {}, getUser = id => uc[id] || (uc[id] = db.ref('users/' + id).get().then(x => x.val() || { name: '?' }));
+let tOff = 0; const nowS = () => Date.now() + tOff;
+const fmtDate = ms => new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+const DURS = [['1 hora', 36e5], ['6 horas', 216e5], ['24 horas', 864e5], ['3 dias', 2592e5], ['7 dias', 6048e5], ['30 dias', 2592e6]];
+function toast(t, label, fn) {
+  const d = el('div', 'toast', t);
+  if (label) { const b = el('button', 'btn', label); b.onclick = () => { fn(); d.remove(); }; d.append(b); }
+  document.body.append(d); setTimeout(() => d.remove(), label ? 30000 : 3500);
+}
+
+/* ---------- acesso: só quem está em admins/<uid> ---------- */
+let me = null, subs = [], repData = {}, tab = 'reports', showResolved = false;
+const errBox = m => $('#err').textContent = m;
+const msgErr = e => ({ 'auth/invalid-email': 'E-mail inválido.', 'auth/missing-password': 'Digite a senha.', 'auth/wrong-password': 'Senha incorreta.', 'auth/invalid-credential': 'E-mail ou senha incorretos.', 'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco.', 'auth/user-disabled': 'Esta conta foi desativada.', 'auth/network-request-failed': 'Sem conexão.', 'auth/unauthorized-domain': 'Adicione este domínio em Authentication > Configurações > Domínios autorizados.' }[e.code] || e.message);
+$('#login').onclick = () => { const e = $('#email').value.trim(); if (!e || !$('#pass').value) return errBox('Digite e-mail e senha.'); errBox(''); auth.signInWithEmailAndPassword(e, $('#pass').value).catch(x => errBox(msgErr(x))); };
+$('#pass').addEventListener('keydown', e => e.key === 'Enter' && $('#login').click());
+$('#google').onclick = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => errBox(msgErr(e)));
+
+function lock(msg) { subs.forEach(f => f()); subs = []; me = null; repData = {}; $('#panel').hidden = true; $('#gate').hidden = false; if (msg) errBox(msg); }
+auth.onAuthStateChanged(async u => {
+  if (!u) return lock();
+  let ok = false;
+  try { ok = (await db.ref('admins/' + u.uid).get()).val() === true; } catch (e) { ok = false; }
+  if (!ok) { lock('⛔ Acesso negado: esta conta não é de administrador.'); return auth.signOut().then(() => errBox('⛔ Acesso negado: esta conta não é de administrador.')); }
+  const prof = await getUser(u.uid);
+  me = { uid: u.uid, name: (prof.name && prof.name !== '?' ? prof.name : u.displayName || (u.email || 'admin').split('@')[0]) };
+  start();
+});
+
+function start() {
+  errBox(''); $('#gate').hidden = true; $('#panel').hidden = false; let first = true;
+  const on = (ref, fn) => { ref.on('value', fn); subs.push(() => ref.off('value', fn)); };
+  on(db.ref('.info/serverTimeOffset'), s => { tOff = s.val() || 0; });
+  /* se deixar de ser admin enquanto usa o painel, bloqueia na hora */
+  on(db.ref('admins/' + me.uid), s => { if (s.val() !== true) { lock('⛔ Seu acesso de administrador foi removido.'); auth.signOut(); } });
+  on(db.ref('reports').limitToLast(100), s => {
+    const prev = Object.keys(repData); repData = s.val() || {};
+    if (!first) { const add = Object.entries(repData).filter(([id, r]) => r.status !== 'resolved' && !prev.includes(id)); if (add.length) toast('🚩 Nova denúncia contra ' + (add[0][1].targetName || '?'), 'Ver', () => { tab = 'reports'; render(); }); }
+    first = false; render();
+  });
+}
+
+const TABS = [['reports', '🚩 Denúncias'], ['users', '👤 Usuários'], ['log', '📜 Histórico'], ['news', '📢 Novidades'], ['admins', '🛡 Administradores']];
+function render() {
+  if (!me) return; const n = $('#nav'), c = $('#content'), open = Object.values(repData).filter(r => r.status !== 'resolved').length;
+  if ($('#content').contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  n.replaceChildren(el('b', null, '🛡 Concord Admin')); c.replaceChildren();
+  TABS.forEach(([k, l]) => { const b = el('button', k === tab ? 'on' : '', l + (k === 'reports' && open ? ' (' + open + ')' : '')); b.onclick = () => { tab = k; render(); }; n.append(b); });
+  const sp = el('div', 'sp'), out = el('button', null, '⏻ Sair (' + me.name + ')'); out.onclick = () => auth.signOut(); n.append(sp, out);
+  ({ reports: apReports, users: apUsers, log: apLog, news: apNews, admins: c2 => c2.append(el('h2', null, '🛡 Administradores'), adminCard()) })[tab](c);
+}
+const renderAP = render;
+
+/* ---------- funções de moderação (movidas do site principal) ---------- */
+const ACTS = [['⚠️ Avisar', 'warn'], ['⏳ Limitar', 'limit'], ['⏸ Suspender', 'suspend'], ['🔨 Banir', 'ban']];
+function reportCard(id, r, actionable) {
+  const d = el('div', 'card2'); d.append(el('b', null, '🚩 ' + r.reason + ' · ' + (r.ts ? fmtDate(r.ts) : '')), el('small', null, 'Denunciado: ' + r.targetName + ' (' + r.target + ') · Por: ' + r.byName));
+  if (r.msg) d.append(el('div', 'pbio', r.msg.text ? '“' + r.msg.text + '”' : (r.msg.att ? '(mensagem com mídia ou anexo)' : '(sem texto)')));
+  if (r.details) d.append(el('small', null, 'Detalhes: ' + r.details));
+  if (actionable) {
+    const row = el('div', 'pact'); ACTS.forEach(([l, a]) => { const b = el('button', 'btn ghost', l); b.onclick = () => openMod(r.target, r.targetName, id, a); row.append(b); });
+    const ar = el('button', 'btn ghost', '✅ Arquivar'); ar.onclick = () => db.ref('reports/' + id).update({ status: 'resolved', action: 'arquivada', handledBy: me.uid, handledName: me.name, handledAt: firebase.database.ServerValue.TIMESTAMP }); row.append(ar); d.append(row);
+  } else d.append(el('small', null, '✔ Resolvida por ' + (r.handledName || '?') + ': ' + (r.action || '')));
+  return d;
+}
+function apReports(c) {
+  c.append(el('h2', null, '🚩 Denúncias'));
+  const all = Object.entries(repData).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0)), op = all.filter(([, r]) => r.status !== 'resolved'), done = all.filter(([, r]) => r.status === 'resolved').slice(0, 15);
+  if (!op.length) c.append(el('div', 'empty', 'Nenhuma denúncia aberta. 🎉'));
+  op.forEach(([id, r]) => c.append(reportCard(id, r, true)));
+  const t = el('button', 'btn ghost', (showResolved ? 'Ocultar' : 'Mostrar') + ' resolvidas (' + done.length + ')'); t.onclick = () => { showResolved = !showResolved; renderAP(); }; c.append(t);
+  if (showResolved) done.forEach(([id, r]) => c.append(reportCard(id, r, false)));
+}
+function apUsers(c) {
+  c.append(el('h2', null, '👤 Usuários'));
+  const f = el('div', 'card2'), i = el('input'), b = el('button', 'btn', 'Buscar'), res = el('div'); i.placeholder = 'Nome de usuário ou ID'; f.append(el('small', null, 'Busque pelo nome exato ou cole o ID da conta.'), i, b); c.append(f, res);
+  const go = async () => {
+    const v = i.value.trim(); if (!v) return; res.replaceChildren(el('small', null, 'Buscando…')); let id = null, u = null;
+    try {
+      const q = await db.ref('users').orderByChild('lname').equalTo(v.toLowerCase()).limitToFirst(1).get();
+      if (q.exists()) { id = Object.keys(q.val())[0]; u = q.val()[id]; } else { const x = (await db.ref('users/' + v).get()).val(); if (x) { id = v; u = x; } }
+      if (!id) return res.replaceChildren(el('small', null, 'Usuário não encontrado.'));
+      const a = (await db.ref('accounts/' + id).get()).val() || {}, d = el('div', 'card2'), st = [], wc = Object.keys((await db.ref('warns/' + id).get()).val() || {}).length;
+      if (a.banned) st.push('🔨 banida'); if ((a.until || 0) > nowS()) st.push('⏸ suspensa até ' + fmtDate(a.until)); if ((a.limitUntil || 0) > nowS()) st.push('⏳ limitada até ' + fmtDate(a.limitUntil));
+      d.append(el('b', null, u.name), el('small', null, 'ID: ' + id), el('small', null, 'Situação: ' + (st.join(' · ') || '✅ normal') + (a.reason ? ' · motivo: ' + a.reason : '')), el('small', null, 'Avisos recebidos: ' + wc));
+      const row = el('div', 'pact'); [...ACTS, ['✅ Remover sanções', 'clear']].forEach(([l, ac]) => { const bt = el('button', 'btn ghost', l); bt.onclick = () => openMod(id, u.name, null, ac); row.append(bt); });
+      d.append(row); res.replaceChildren(d);
+    } catch (e) { res.replaceChildren(el('small', null, 'Erro: ' + e.message)); }
+  };
+  b.onclick = go; i.onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+async function apLog(c) {
+  c.append(el('h2', null, '📜 Histórico de sanções')); const box = el('div'); c.append(box);
+  try {
+    const l = Object.values((await db.ref('modlog').limitToLast(50).get()).val() || {}).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (!l.length) box.append(el('div', 'empty', 'Nenhuma sanção aplicada ainda.'));
+    l.forEach(x => { const d = el('div', 'card2'), dur = (DURS.find(y => y[1] === x.dur) || [])[0]; d.append(el('b', null, ({ warn: '⚠️ Aviso', limit: '⏳ Limite', suspend: '⏸ Suspensão', ban: '🔨 Banimento', clear: '✅ Sanções removidas' })[x.action] + (dur ? ' (' + dur + ')' : '') + ' — ' + x.name), el('small', null, fmtDate(x.ts || 0) + ' · por ' + x.byName + (x.reason ? ' · ' + x.reason : ''))); box.append(d); });
+  } catch (e) { box.append(el('small', null, 'Erro: ' + e.message)); }
+}
+function openMod(uid, name, reportId, action) {
+  const d = $('#md'), body = $('#md-body'), ac = el('select'), du = el('select'), rs = el('textarea'), ok = el('button', 'btn', 'Aplicar'), cl = el('button', 'btn ghost', 'Cancelar'); body.replaceChildren();
+  [['warn', '⚠️ Avisar'], ['limit', '⏳ Limitar temporariamente'], ['suspend', '⏸ Suspender temporariamente'], ['ban', '🔨 Banir permanentemente'], ['clear', '✅ Remover todas as sanções']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; ac.append(o); }); ac.value = action || 'warn';
+  DURS.forEach(([l, v]) => { const o = el('option', null, l); o.value = v; du.append(o); }); du.value = 864e5; rs.placeholder = 'Motivo (o usuário verá isso)'; rs.maxLength = 300;
+  const sync = () => { du.hidden = !['limit', 'suspend'].includes(ac.value); }; ac.onchange = sync; sync();
+  body.append(el('h3', null, '🛡 Moderar ' + name), el('small', null, 'ID: ' + uid), ac, du, rs, ok, cl);
+  ok.onclick = async () => {
+    const a = ac.value; if (a !== 'clear' && !rs.value.trim()) return toast('Escreva o motivo.'); if (a === 'ban' && !confirm('Banir ' + name + ' permanentemente?')) return;
+    ok.disabled = true;
+    try { await applySanction(uid, name, a, +du.value, rs.value.trim(), reportId); d.close(); toast('Sanção aplicada.'); }
+    catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: publique as novas regras do Firebase (administradores não podem ser sancionados).' : 'Erro: ' + e.message); }
+    ok.disabled = false;
+  };
+  cl.onclick = () => d.close(); d.showModal();
+}
+async function applySanction(uid, name, action, dur, reason, reportId) {
+  if (uid === me.uid) throw new Error('Você não pode se sancionar.');
+  if ((await db.ref('admins/' + uid).get()).val() === true) throw new Error('Administradores não podem ser sancionados.');
+  const ts = firebase.database.ServerValue.TIMESTAMP, now = nowS(), a = db.ref('accounts/' + uid), warn = text => db.ref('warns/' + uid).push({ text, by: me.uid, byName: me.name, ts, seen: false });
+  if (action === 'warn') await warn(reason);
+  if (action === 'limit') { await a.update({ limitUntil: now + dur, limitReason: reason }); await warn('Sua conta foi limitada até ' + fmtDate(now + dur) + ': só mensagens de texto, sem links ou anexos, com intervalo de 10 segundos entre mensagens. Motivo: ' + reason); }
+  if (action === 'suspend') await a.update({ until: now + dur, reason });
+  if (action === 'ban') await a.update({ banned: true, reason });
+  if (action === 'clear') await a.update({ banned: null, until: null, limitUntil: null, reason: null, limitReason: null });
+  await db.ref('modlog').push({ uid, name, action, dur: dur || null, reason: reason || '', by: me.uid, byName: me.name, ts });
+  if (reportId) await db.ref('reports/' + reportId).update({ status: 'resolved', action, handledBy: me.uid, handledName: me.name, handledAt: ts });
+}
+
+
+/* ---------- novidades e administradores (movidos do site principal) ---------- */
+function photoData(f, maxW, cb) {
+  if (!f || !f.type.startsWith('image/')) return toast('Escolha uma imagem.');
+  const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => { const k = Math.min(1, maxW / img.width), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); cb(c.toDataURL('image/jpeg', .78)); };
+  img.onerror = () => toast('Não consegui abrir essa imagem.'); img.src = url;
+}
+
+function newsForm() {
+  const d = el('div', 'card2'), t = el('input'), x = el('textarea'), fi = el('input'), ur = el('input'), ok = el('button', 'btn', '📢 Publicar novidade'); let img = '';
+  d.append(el('h3', null, 'Publicar novidade (só administradores)'), t, x, el('small', null, 'Imagem (opcional):'), fi, ur, ok);
+  t.placeholder = 'Título (ex.: Versão 2.1: tickets e tags!)'; t.maxLength = 100; x.placeholder = 'Texto da novidade. Aceita **negrito**, links e convites de servidor.'; x.maxLength = 3000; x.style.minHeight = '120px';
+  fi.type = 'file'; fi.accept = 'image/*'; ur.placeholder = '…ou cole o link de uma imagem (https://…)';
+  fi.onchange = () => photoData(fi.files[0], 800, d2 => { img = d2; ur.value = ''; toast('Imagem pronta!'); });
+  ok.onclick = async () => {
+    if (!t.value.trim() || !x.value.trim()) return toast('Preencha o título e o texto.');
+    const link = ur.value.trim(), post = { title: t.value.trim(), text: x.value.trim(), ts: firebase.database.ServerValue.TIMESTAMP, by: me.uid, byName: me.name };
+    if (img || /^https?:\/\//.test(link)) post.img = img || link;
+    try { await db.ref('news').push(post); t.value = x.value = ur.value = ''; img = ''; fi.value = ''; toast('Novidade publicada! 🎉'); } catch (e) { toast(/permission/i.test(e.message) ? 'Sem permissão: sua conta não é administradora.' : 'Erro: ' + e.message); }
+  };
+  return d;
+}
+function adminCard() {
+  const d = el('div', 'card2'), inp = el('input'), add = el('button', 'btn ghost', 'Tornar administrador'), list = el('div');
+  const kk = el('input'), kb = el('button', 'btn ghost', 'Salvar chave do Klipy para todos'); kk.placeholder = 'Chave do Klipy (GIFs para todos os usuários)'; kb.onclick = async () => { try { await db.ref('config/klipy').set(kk.value.trim() || null); toast('Chave do Klipy salva para todos!'); } catch (e) { toast('Erro: ' + e.message); } };
+  d.append(el('h3', null, '🛡 Administradores do Concord'), el('small', null, 'Cole o ID da pessoa (⚙ > Seu ID) para que ela também tenha acesso a este painel e possa publicar novidades.'), inp, add, list, el('h3', null, '🎞 GIFs (Klipy)'), el('small', null, 'Uma chave compartilhada faz o botão GIF funcionar para todo mundo. Crie em klipy.com/developers.'), kk, kb); inp.placeholder = 'ID do usuário';
+  const load = async () => {
+    const a = (await db.ref('admins').get()).val() || {}; list.replaceChildren();
+    for (const id of Object.keys(a)) {
+      const u = await getUser(id), r = el('div', 'row'), t = el('span', null, '🛡 ' + (u.name && u.name !== '?' ? u.name : id) + (id === me.uid ? ' (você)' : '')); t.style.flex = 1; r.append(t);
+      if (id !== me.uid) { const x = el('button', 'icon', '🗑'); x.onclick = async () => { await db.ref('admins/' + id).remove(); load(); }; r.append(x); } list.append(r);
+    }
+  };
+  add.onclick = async () => { const id = inp.value.trim(); if (!id) return; try { await db.ref('admins/' + id).set(true); inp.value = ''; toast('Administrador adicionado!'); load(); } catch (e) { toast('Erro: ' + e.message); } };
+  load().catch(() => {}); return d;
+}
+
+function apNews(c) {
+  c.append(el('h2', null, '📢 Novidades'), newsForm());
+  const feed = el('div'); c.append(feed);
+  const ref = db.ref('news').limitToLast(20), fn = s => {
+    feed.replaceChildren(); const all = Object.entries(s.val() || {}).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+    if (!all.length) feed.append(el('div', 'empty', 'Nenhuma novidade publicada ainda.'));
+    all.forEach(([id, p]) => {
+      const d = el('div', 'card2 post'), x = el('button', 'btn ghost', '🗑 Apagar'); x.onclick = () => confirm('Apagar esta novidade?') && db.ref('news/' + id).remove();
+      d.append(el('small', null, (p.ts ? fmtDate(p.ts) : '') + (p.byName ? ' · ' + p.byName : '')), el('h3', null, p.title || ''), el('div', 'pbio', p.text || ''));
+      if (p.img) { const im = el('img'); im.src = p.img; im.alt = ''; d.append(im); }
+      d.append(x); feed.append(d);
+    });
+  };
+  ref.on('value', fn); const off = () => ref.off('value', fn); subs.push(off); const t = tab; const chk = setInterval(() => { if (tab !== t || !me) { off(); clearInterval(chk); } }, 1000);
+}
+</script>
+</body>
+</html>
